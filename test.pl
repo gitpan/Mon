@@ -1,4 +1,45 @@
 exit;
+use Mon::Protocol;
+use Data::Dumper;
+
+$block= <<'EOF';
+begin_block=UNKNOWN
+begin=host1
+var1=val1
+var2=val2
+end=host1
+begin=host2
+var1=fuck\0ayou\0avery\0amuch\0a\02\03\zz
+var2=val2
+end=host2
+end_block=UNKNOWN
+EOF
+
+my $p = new Mon::Protocol;
+$p->parse_data ($block);
+
+print Dumper ($p), "\n";
+
+exit;
+use Mon::Protocol;
+
+my $p = new Mon::Protocol;
+
+$p->add_to_section ("host1", {
+    "var1"	=> "val1",
+    "var2"	=> "val2",
+});
+
+$p->add_to_section ("host2", {
+    "var1"	=> "val1\nfuck\nyou\n",
+    "var2"	=> "val2",
+});
+
+$a = $p->dump_data;
+
+print "$a\n";
+exit;
+
 use Mon::Client;
 
 my $c = new Mon::Client (
@@ -208,7 +249,7 @@ foreach $g (keys %o) {
 
 __END__
 #
-# $Id: test.pl,v 1.14 2000/02/22 16:52:39 trockij Exp $
+# $Id: test.pl 1.1 Mon, 21 Aug 2000 08:30:45 -0700 trockij $
 #
 
 use Mon::Client;

@@ -100,6 +100,13 @@ Uses B<username> and B<password> if specified, otherwise uses
 the username and password previously set by those methods, respectively.
 
 
+=item checkauth ( command )
+
+Checks to see if the specified command, as executed by the current user,
+is authorized by the server, without actually executing the command.
+Returns 1 (command is authorized) or 0 (command is not authorized).
+
+
 =item disable_watch ( watch )
 
 Disables B<watch>.
@@ -389,7 +396,7 @@ Returns I<undef> on error.
 #
 # Perl module for interacting with a mon server
 #
-# $Id: Client.pm,v 1.31 2000/02/28 13:06:01 trockij Exp $
+# $Id: Client.pm 1.2 Mon, 21 Aug 2000 08:34:36 -0700 trockij $
 #
 # Copyright (C) 1998-2000 Jim Trocki
 #
@@ -419,7 +426,7 @@ use Text::ParseWords;
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(%OPSTAT $VERSION);
 
-$VERSION = do { my @r = (q$Name: monperl-0-9 $ =~ /\d+/g); sprintf "%d.%d" x $#r, @r }; # must be all one line, for MakeMaker
+$VERSION = "0.10";
 
 my ($STAT_FAIL, $STAT_OK, $STAT_COLDSTART, $STAT_WARMSTART, $STAT_LINKDOWN,
 $STAT_UNKNOWN, $STAT_TIMEOUT, $STAT_UNTESTED, $STAT_DEPEND, $STAT_WARN) = (0..9);
@@ -472,7 +479,7 @@ sub new {
     $self->{"ERROR"} = undef;
     $self->{"VERSION"} = undef;
 
-    if ($ENV{"USER"}) {
+    if ($ENV{"USER"} ne "") {
     	$self->{"USERNAME"} = $ENV{"USER"};
     } else {
     	$self->{"USERNAME"} = (getpwuid ($<))[0];
@@ -603,9 +610,12 @@ sub connect {
     	if (!$self->protid)
 	{
 	    $self->{"ERROR"} = "connect failed, protocol mismatch";
+	    close ($self->{"HANDLE"});
 	    return undef;
 	}
     }
+
+    1;
 }
 
 
@@ -689,6 +699,33 @@ sub login {
     }
 
     return 1;
+}
+
+
+sub checkauth {
+    my $self = shift;
+    my ($cmd) = @_;
+
+    undef $self->{"ERROR"};
+
+    if (!$self->{"CONNECTED"}) {
+      $self->{"ERROR"} = "not connected";
+      return undef;
+    }
+
+    if ($cmd eq "") {
+      $self->{"ERROR"} = "invalid command";
+      return undef;
+    }
+
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "checkauth $cmd");
+
+    if ($r =~ /^220/) {
+      return 1;
+    } else {
+      $self->{"ERROR"} = $r;
+      return 0;
+    }
 }
 
 
@@ -1907,7 +1944,6 @@ sub _sock_readline {
 #
 # not yet implemented
 #
-#list aliases
 #list aliasgroups
 
 
@@ -1944,4 +1980,71 @@ sub _un_esc_str {
     $str =~ s{\\([0-9a-f]{2})}{chr(hex($1))}eg;
 
     $str;
+}
+
+sub list_aliases {
+    my $self = shift;
+    my ($r, @d, $d, $group, $service, @allAlias, $aliasBlock, %alias);
+
+    undef $self->{ERROR};
+
+    if (!$self->{CONNECTED}) {
+    	$self->{ERROR} = "not connected";
+	return undef;
+    }
+
+    ($r, @d) = _do_cmd ($self->{HANDLE}, "list aliases");
+
+    if (!defined $r) {
+	$self->{ERROR} = "error (@d)";
+    	return undef;
+    } elsif ($r !~ /^220/) {
+	$self->{ERROR} = $r;
+    	return undef;
+    }
+
+    return $r if (!defined $r);
+
+	# the block separator is \n\n
+	@allAlias = split (/\n\n/ ,join ("\n", @d));
+	foreach $aliasBlock (@allAlias) {
+		my(@allServices, $headerAlias, @headerAlias, $nameLine, $name, $description);
+		
+		# extract the service block
+		@allServices = split ( /\nservice\s*/, $aliasBlock);
+		# The first element is not a service block, it is the alias header
+		# alias FOO
+		# FOO is a good service
+		# FOO bla bla
+		$headerAlias = shift (@allServices);
+		# Split the block to get the name and the description
+		@headerAlias = split (/\n/, $headerAlias);
+		$nameLine = shift(@headerAlias);
+		$nameLine =~ /\Aalias\s+(\S+)/;
+		$name = $1;
+		
+		$headerAlias = join("\n", @headerAlias);
+		$alias{$name}{'declaration'} = ($headerAlias) ? $headerAlias : '?';
+		
+		foreach $service (@allServices) {
+			my($serviceName, @allWatch, $watch);
+			@allWatch = split ("\n", $service);
+			$serviceName = shift(@allWatch);
+			foreach $watch (@allWatch) {
+				my($groupWatched, $serviceWatched, @items, $url);
+				if($watch =~ /\Awatch\s+(\S+)\s+service\s+(\S+)\s+items\s*(.*)\Z/){
+					$groupWatched   = $1;
+					$serviceWatched = $2;
+					@items		= split(/\s+/, $3);
+					$alias{$name}{'service'}{$serviceName}{'watch'}{$groupWatched}{'service'}{$serviceWatched}{'items'} = [ @items ];
+					
+				}elsif($watch =~ /\Aurl\s+(.*)\Z/){
+					$url = $1;
+					$alias{$name}{'service'}{$serviceName}{'url'} = $url;
+				}
+			}			
+		}
+		
+	}
+    return %alias;
 }

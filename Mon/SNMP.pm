@@ -88,7 +88,7 @@ Mon::SNMP depends upon Convert::BER to do the real work.
 
 #
 #
-# $Id: SNMP.pm,v 1.7 1999/06/16 00:46:26 trockij Exp $
+# $Id: SNMP.pm 1.2 Mon, 21 Aug 2000 08:34:36 -0700 trockij $
 #
 # Copyright (C) 1998 Jim Trocki
 #
@@ -119,7 +119,7 @@ use Socket;
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(@traptypes @ASN_DEFS $VERSION);
 
-$VERSION = do { my @r = (q$Revision: 1.7 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
+$VERSION = "0.10";
 
 @traptypes = ("COLDSTART", "WARMSTART", "LINKDOWN", "LINKUP", "AUTHFAIL",
 	"EGPNEIGHBORLOSS", "ENTERPRISESPECIFIC");

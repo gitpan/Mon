@@ -1,10 +1,10 @@
 #
-# $Id: Makefile.PL,v 1.7 2000/02/16 04:17:30 trockij Exp $
+# $Id: Makefile.PL 1.2 Mon, 21 Aug 2000 08:34:36 -0700 trockij $
 #
 
 use ExtUtils::MakeMaker;
 
 WriteMakefile(
     'NAME'      => 'Mon',
-    'VERSION'   => do { my @r = (q$Name: monperl-0-9 $ =~ /\d+/g); sprintf "%d.%d" x $#r, @r },
+    'VERSION'   => "0.10",
 );

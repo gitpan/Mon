@@ -75,7 +75,7 @@ retrieve a more elaborate error message and to reset the internal error state.
 #
 # Perl module for parsing / dumping a mon protocol block
 #
-# $Id: Protocol.pm,v 1.2 1999/07/18 19:18:43 lmb Exp $
+# $Id: Protocol.pm 1.2 Mon, 21 Aug 2000 08:34:36 -0700 trockij $
 #
 # Copyright (C) 1999 Lars Marowsky-Brée <lmb@teuto.net>
 #
@@ -102,10 +102,24 @@ use IO::File;
 use Socket;
 use Text::ParseWords;
 
+sub new;
+sub dump_data;
+sub parse_data;
+sub type;
+sub get_section;
+sub get_section_list;
+sub add_to_section;
+sub delete_section;
+sub delete_from_section;
+sub error;
+sub DESTROY;
+sub _esc_str;
+sub _un_esc_str;
+
 @ISA = qw(Exporter);
 @EXPORT_OK = qw($VERSION @);
 
-$VERSION = do { my @r = (q$Revision: 1.2 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
+$VERSION = "0.10";
 
 @TYPES = qw(cmd_monitor cmd_alert cmd_logger res_monitor res_alert res_logger);
 
@@ -134,12 +148,9 @@ sub dump_data {
        $tmp.="begin=".$section."\n";
 
        my ($key,$data);
+
        while ( ($key,$data) = each %{$self->{'data'}->{$section}} ) {
-          my (@l) = split(/\n/o, $data);
-	  my ($l);
-	  while ($l = shift @l) {
-             $tmp.= "$key=$l\n";
-	  }
+	  $tmp .= "$key=". _esc_str ($data) . "\n";
        }
        $tmp.="end=".$section."\n";
        
@@ -149,6 +160,7 @@ sub dump_data {
 
     return $tmp;
 }
+
 
 sub parse_data {
     my ($self) = shift;
@@ -202,11 +214,7 @@ LINE:    while ($l = shift @l) {
 	 
 	 if (($key,$value) = $l =~ /^([^=]+)=(.*)/o) {
 	    $key = lc($key);
-	    if (defined($tmp{$section}{$key})) {
-	       $tmp{$section}{$key} .= "\n".$value;
-	    } else {
-	       $tmp{$section}{$key} = $value;
-	    }
+	    $tmp{$section}{$key} = _un_esc_str ($value);
 	 } else {
 	    $self->{'error'} = "Garbled input at section level: $l";
 	    return -1;
@@ -307,6 +315,58 @@ sub error {
 
 sub DESTROY {
     my $self = shift;
+}
+
+
+#
+# convert a string to a hex-escaped string, returning
+# the escaped string.
+#
+# $str is the string to be escaped
+# if $inquotes is true, backslashes are doubled, making
+#       the escaped string suitable to be enclosed in
+#       single quotes and later passed to Text::quotewords.
+#       For example,   var='quoted value'
+#
+sub _esc_str {
+    my $str = shift;
+    my $inquotes = shift;
+
+    my $escstr = "";
+
+    for (my $i = 0; $i < length ($str); $i++)
+    {
+    	my $c = substr ($str, $i, 1);
+
+	if (ord ($c) < 32 ||
+	    ord ($c) > 126 ||
+	    $c eq "\"" ||
+	    $c eq "\'")
+	{
+	    $c = sprintf ("\\%02x", ord($c));
+	}
+	elsif ($inquotes && $c eq "\\")
+	{
+	    $c = "\\\\";
+	}
+
+	$escstr .= $c;
+    }
+
+    $escstr;
+}
+
+
+#
+# convert a hex-escaped string into an unescaped string,
+# returning the unescaped string
+#
+sub _un_esc_str {
+    my $str = shift;
+
+    $str =~ s{\\([0-9a-f]{2})}{chr(hex($1))}eg;
+
+    $str;
 }
 
 1;

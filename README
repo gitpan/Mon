@@ -1,6 +1,6 @@
 #
-# $Id: README,v 1.4 1999/05/05 05:04:15 trockij Exp $
-# $Name: monperl-0-9 $
+# $Id: README 1.1 Mon, 21 Aug 2000 08:30:45 -0700 trockij $
+# $Name:  $
 #
 
 This is the Perl5 module for interfacing with the Mon system monitoring
