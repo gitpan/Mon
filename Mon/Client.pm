@@ -59,11 +59,6 @@ which is of the form "1.2.3", where "1" is the major revision, "2" is
 the minor revision, and "3" is the sub-minor revision.
 If I<protocol> is not provided, the currently set protocol is returned.
 
-=item prot_cmp prot_a prot_b
-
-Compares two protocol versions and returns -1, 0, or 1 if prot_a is
-less than, equal, or greater than prot_b, respectively. The protocols
-must be specified in the form described by above entry for "prot".
 
 =item protid ([protocol])
 
@@ -394,7 +389,7 @@ Returns I<undef> on error.
 #
 # Perl module for interacting with a mon server
 #
-# $Id: Client.pm,v 1.30 2000/02/22 16:52:40 trockij Exp $
+# $Id: Client.pm,v 1.31 2000/02/28 13:06:01 trockij Exp $
 #
 # Copyright (C) 1998-2000 Jim Trocki
 #
@@ -424,7 +419,7 @@ use Text::ParseWords;
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(%OPSTAT $VERSION);
 
-$VERSION = do { my @r = (q$Name: monperl-0-8 $ =~ /\d+/g); sprintf "%d.%d" x $#r, @r }; # must be all one line, for MakeMaker
+$VERSION = do { my @r = (q$Name: monperl-0-9 $ =~ /\d+/g); sprintf "%d.%d" x $#r, @r }; # must be all one line, for MakeMaker
 
 my ($STAT_FAIL, $STAT_OK, $STAT_COLDSTART, $STAT_WARMSTART, $STAT_LINKDOWN,
 $STAT_UNKNOWN, $STAT_TIMEOUT, $STAT_UNTESTED, $STAT_DEPEND, $STAT_WARN) = (0..9);
@@ -541,29 +536,6 @@ sub prot {
 	}
     }
     return $self->{"PROT"};
-}
-
-
-sub prot_cmp {
-    my $self = shift;
-
-    undef $self->{"ERROR"};
-
-    if ($_[0] !~ /^\d+\.\d+\.\d+$/ ||
-	    $_[1] !~ /^\d+\.\d+\.\d+$/) {
-	$self->{"ERROR"} = "invalid protocol version";
-	return undef;
-    }
-
-    my @a = split (/\./, $_[0]);
-    my @b = split (/\./, $_[1]);
-
-    for (my $i = 0; $i < @a; $i++) {
-    	return -1 if ($a[$i] < $b[$i]);
-	return 1  if ($a[$i] > $b[$i]);
-    }
-
-    return 0;
 }
 
 
@@ -951,14 +923,6 @@ sub list_descriptions {
 
     undef $self->{"ERROR"};
 
-    my $v = $self->prot_cmp ($self->prot, "0.38.0");
-    if (!defined $v) {
-	return undef;
-    } elsif ($v < 0) {
-    	$self->{"ERROR"} = "list descriptions not supported";
-	return undef;
-    }
-
     if (!$self->{"CONNECTED"}) {
     	$self->{"ERROR"} = "not connected";
 	return undef;
@@ -990,15 +954,6 @@ sub list_deps {
     my $self = shift;
 
     undef $self->{"ERROR"};
-
-    my $v = $self->prot_cmp ($self->prot, "0.38.0");
-
-    if (!defined $v) {
-	return undef;
-    } elsif ($v < 0) {
-    	$self->{"ERROR"} = "list deps not supported";
-	return undef;
-    }
 
     if (!$self->{"CONNECTED"}) {
     	$self->{"ERROR"} = "not connected";
@@ -1885,78 +1840,18 @@ sub _list_opstatus {
     	return undef;
     }
 
-    my $v = $self->prot_cmp ($self->prot, "0.38.0");
-    return undef if (!defined $v);
-
-    if ($v >= 0) {		# 0.38.0 and above
-    	foreach $o (@op) {
-	    foreach my $w (quotewords ('\s+', 0, $o)) {
-	    	my ($var, $val) = split (/=/, $w, 2);
-		$op{$var} = _un_esc_str ($val);
-	    }
-
-	    next if ($op{group} eq "");
-	    next if ($op{service} eq "");
-	    $group = $op{"group"};
-	    $service = $op{"service"};
-	    foreach my $w (keys %op) {
-	    	$opstatus{$group}{$service}{$w} = $op{$w};
-	    }
+    foreach $o (@op) {
+	foreach my $w (quotewords ('\s+', 0, $o)) {
+	    my ($var, $val) = split (/=/, $w, 2);
+	    $op{$var} = _un_esc_str ($val);
 	}
 
-    #
-    # old protocol, 0.37
-    #
-    } else {
-    	foreach my $o (@op) {
-	    ($group, $service, $last, $timer, $summary) = split (/\s+/, $o, 5);
-	    if ($last == 0) {
-		%{$opstatus{$group}{$service}} = (
-		    opstatus => $STAT_UNTESTED,
-		    last_failure => undef,
-		    last_success => undef,
-		    last_trap => undef,
-		    timer => $timer,
-		    ack => undef,
-		    ackcomment => undef,
-		    last_summary => "untested",
-		    exitval => undef,
-		    group => $group,
-		    service => $service
-		);
-	    } elsif ($summary =~ /^succeeded/) {
-		$summary =~ s/^succeeded\s+//;
-		%{$opstatus{$group}{$service}} = (
-		    opstatus => $STAT_OK,
-		    last_failure => undef,
-		    last_success => $last,
-		    last_check => $last,
-		    last_trap => undef,
-		    timer => $timer,
-		    ack => undef,
-		    ackcomment => undef,
-		    last_summary => $summary,
-		    exitval => 0,
-		    group => $group,
-		    service => $service
-		);
-	    } elsif ($summary =~ /^failed/) {
-		$summary =~ s/^failed\s+//;
-		%{$opstatus{$group}{$service}} = (
-		    opstatus => $STAT_FAIL,
-		    last_failure => $last,
-		    last_success => undef,
-		    last_trap => undef,
-		    last_check => $last,
-		    timer => $timer,
-		    ack => undef,
-		    ackcomment => undef,
-		    last_summary => $summary,
-		    exitval => 1,
-		    group => $group,
-		    service => $service
-		);
-	    }
+	next if ($op{group} eq "");
+	next if ($op{service} eq "");
+	$group = $op{"group"};
+	$service = $op{"service"};
+	foreach my $w (keys %op) {
+	    $opstatus{$group}{$service}{$w} = $op{$w};
 	}
     }
 

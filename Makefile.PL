@@ -6,5 +6,5 @@ use ExtUtils::MakeMaker;
 
 WriteMakefile(
     'NAME'      => 'Mon',
-    'VERSION'   => do { my @r = (q$Name: monperl-0-8 $ =~ /\d+/g); sprintf "%d.%d" x $#r, @r },
+    'VERSION'   => do { my @r = (q$Name: monperl-0-9 $ =~ /\d+/g); sprintf "%d.%d" x $#r, @r },
 );
