@@ -1,0 +1,34 @@
+$Id: CHANGES,v 1.5 1999/06/16 00:46:25 trockij Exp $
+$Name: monperl-0-5 $
+
+CHANGELOG
+
+Differences between Mon-0.4 and 0.5:
+------------------------------------
+    -Fixed bug in old (before 0.38) opstatus parsing for Client.pm
+
+
+Differences between Mon-0.3 and 0.4:
+------------------------------------
+    -Changed argument format for "prot", and added "prot_cmp", and
+     made appropriate documentation updates.
+
+    -$self->{"VERSION"} now defaults to undef (like it should),
+     since it is not the _requested_ protocol version, it is the
+     version obtained by asking the server. The _requested_ protocol
+     version is specified via $self->prot().
+
+    -_list_opstatus now uses $self->prot() to figure out how to behave
+     when talking to the server.
+
+    -Export %OPSTAT for use by clients
+
+
+Differences between Mon-0.1 and 0.3:
+------------------------------------
+
+    -Added send_trap, submitted by Lars Marowsky-Bree <lmb@teuto.net>.
+
+    -new now lets you initialize variables.
+
+    -Updated docs.
