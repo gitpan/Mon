@@ -1,7 +1,21 @@
-$Id: CHANGES,v 1.8 1999/11/16 18:52:00 trockij Exp $
-$Name: monperl-0-6 $
+$Id: CHANGES,v 1.11 2000/02/07 00:30:35 trockij Exp $
+$Name: monperl-0-7 $
 
 CHANGELOG
+
+Differences between Mon-0.6 and 0.7:
+Sun Feb  6 13:07:57 PST 2000
+------------------------------------
+    -Fixed a problem with the "test" function. It now requires
+     the type of test as the first argument. Bug reported by
+     andrewr@myCFO.com and rjentsch@electronicpartner.de.
+
+    -reload accepts arguments such as "reload auth"
+
+    -fix "list pids" output parsing to match what mon-0.38.16 does.
+
+    -list_dtlog submitted by Martha H Greenberg <marthag@mit.edu>
+
 
 Differences between Mon-0.5 and 0.6:
 Tue Nov 16 10:51:26 PST 1999

@@ -230,6 +230,25 @@ Returns an array of hash references containing the alert history.
 	);
     }
 
+=item list_dtlog
+
+Returns an array of hash references containing the downtime log.
+
+@a = $mon->list_dtlog
+
+     for (@a) {
+       print join (" ",
+           $_->{"timeup"},
+           $_->{"group"},
+           $_->{"service"},
+           $_->{"failtime"},
+           $_->{"downtime"},
+           $_->{"intercal"},
+           $_->{"summary"},
+           "\n",
+       );
+     }
+
 =item list_failurehist
 
 Returns an array of hash references containing the failure history.
@@ -286,9 +305,11 @@ Stops the scheduler.
 
 Resets the server.
 
-=item reload
+=item reload ( what )
 
-Causes the server to reload its configuration.
+Causes the server to reload its configuration. B<what> is an optional
+argument, and currently the only supported option is B<auth>, which
+reloads the authorization file.
 
 =item term
 
@@ -302,9 +323,10 @@ Sets the maximum number of history entries to store in memory.
 
 Returns the maximum number of history entries to store in memory.
 
-=item test ( group, service )
+=item test ( test, group, service )
 
-Schedules a service to run immediately.
+Schedules a service test to run immediately. B<test> must be
+B<alert>, B<startupalert>, or B<upalert>.
 
 =item ack ( group, service, text )
 
@@ -351,9 +373,9 @@ Returns I<undef> on error.
 #
 # Perl module for interacting with a mon server
 #
-# $Id: Client.pm,v 1.23 1999/11/08 11:06:05 trockij Exp $
+# $Id: Client.pm,v 1.27 2000/02/07 00:30:36 trockij Exp $
 #
-# Copyright (C) 1998 Jim Trocki
+# Copyright (C) 1998-2000 Jim Trocki
 #
 #    This program is free software; you can redistribute it and/or modify
 #    it under the terms of the GNU General Public License as published by
@@ -381,7 +403,7 @@ use Text::ParseWords;
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(%OPSTAT $VERSION);
 
-$VERSION = do { my @r = (q$Revision: 1.23 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
+$VERSION = do { my @r = (q$Revision: 1.27 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
 
 my ($STAT_FAIL, $STAT_OK, $STAT_COLDSTART, $STAT_WARMSTART, $STAT_LINKDOWN,
 $STAT_UNKNOWN, $STAT_TIMEOUT, $STAT_UNTESTED, $STAT_DEPEND, $STAT_WARN) = (0..9);
@@ -1086,6 +1108,47 @@ sub list_alerthist {
 }
 
 
+sub list_dtlog {
+    my $self = shift;
+    my (@dtlog, $h, $timeup, $group, $service, $failtime, $downtime, $interval, $summary);
+
+    undef $self->{"ERROR"};
+
+    if (!$self->{"CONNECTED"}) {
+      $self->{"ERROR"} = "not connected";
+      return undef;
+    }
+
+    my ($r, @h) = _do_cmd ($self->{"HANDLE"}, "list dtlog");
+
+    if (!defined $r) {
+      $self->{"ERROR"} = "error (@h)";
+      return undef;
+    } elsif ($r !~ /^220/) {
+      $self->{"ERROR"} = $r;
+      return undef;
+    }
+
+    foreach $h (@h) {
+      $h = _un_esc_str ($h);
+
+      my ($timeup, $group, $service, $failtime, $downtime, $interval, $summary) =
+          ($h =~ /^(\d+) \s+ (\S+) \s+ (\S+) \s+
+                  (\d+) \s+ (\d+) \s+ (\d+) \s+ (.*)$/x);
+
+      push @dtlog, { timeup => $timeup,
+                  group => $group,
+                  service => $service,
+                  failtime => $failtime,
+                  downtime => $downtime,
+                  interval => $interval,
+                  summary => $summary };
+    }
+
+    return @dtlog;
+}
+
+
 sub list_failurehist {
     my $self = shift;
     my ($r, @f, $f, $group, $service, $time, $summary, @failures);
@@ -1143,11 +1206,11 @@ sub list_pids {
     }
 
     foreach $p (@p) {
-    	if ($p =~ /(\d+) server/) {
+    	if ($p =~ /server (\d+)/) {
 	    $server = $1;
 
 	} else {
-	    ($pid, $group, $service) = split (/\s+/, $p);
+	    ($group, $service, $pid) = split (/\s+/, $p);
 	    push @pids, { watch => $group, service => $service, pid => $pid };
 	}
     }
@@ -1240,7 +1303,7 @@ sub reload {
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "reload");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, join (" ", "reload", @_));
 
     if (!defined $r) {
 	$self->{"ERROR"} = $l;
@@ -1394,13 +1457,18 @@ sub get {
 
 sub test {
     my $self = shift;
-    my ($group, $service) = @_;
+    my ($what, $group, $service) = @_;
     my ($r, $l);
 
     undef $self->{"ERROR"};
 
     if (!$self->{"CONNECTED"}) {
     	$self->{"ERROR"} = "not connected";
+	return undef;
+    }
+
+    if ($what !~ /^alert|startupalert|upalert$/) {
+    	$self->{"ERROR"} = "unknown test";
 	return undef;
     }
 
@@ -1415,7 +1483,7 @@ sub test {
     }
 
 
-    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "test $group $service");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "test $what $group $service");
 
     if (!defined $r) {
 	$self->{"ERROR"} = $l;
