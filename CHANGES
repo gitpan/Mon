@@ -1,7 +1,21 @@
-$Id: CHANGES,v 1.5 1999/06/16 00:46:25 trockij Exp $
-$Name: monperl-0-5 $
+$Id: CHANGES,v 1.8 1999/11/16 18:52:00 trockij Exp $
+$Name: monperl-0-6 $
 
 CHANGELOG
+
+Differences between Mon-0.5 and 0.6:
+Tue Nov 16 10:51:26 PST 1999
+------------------------------------
+    -Added Mon::Protocol.
+
+    -Some code cleanups
+
+    -Added new quoting rules for mon-0.38.15
+
+    -implemented get and set
+
+    -supports escaped values
+
 
 Differences between Mon-0.4 and 0.5:
 ------------------------------------

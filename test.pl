@@ -1,5 +1,106 @@
 exit;
 use Mon::Client;
+
+my $c = new Mon::Client (
+    host => "uplift",
+);
+
+die if (!defined $c);
+
+if ($c->connected)
+{
+	print "CONNECTED\n";
+}
+else
+{
+	print "NOT CONNECTED\n";
+}
+
+if (!defined $c->connect)
+{
+    die "connect error: " . $c->error . "\n";
+}
+
+if ($c->connected)
+{
+	print "CONNECTED\n";
+}
+else
+{
+	print "NOT CONNECTED\n";
+}
+
+print $c->version, "\n";
+
+my $v = $c->get ("router", "ping", "_timer");
+if (!defined ($v))
+{
+    print STDERR "err getting\n";
+}
+else
+{
+    print "timer=$v\n";
+}
+
+my $v = $c->set ("router", "ping", "_fake_timer", "fuck this shit\n50");
+if (!defined ($v))
+{
+    print STDERR "err setting\n";
+}
+else
+{
+    print "timer=$v\n";
+}
+
+my $v = $c->get ("router", "ping", "_fake_timer");
+if (!defined ($v))
+{
+    print STDERR "err getting\n";
+}
+else
+{
+    print "timer=$v\n";
+}
+
+
+$c->disconnect;
+
+exit;
+
+my %op = $c->list_opstatus;
+
+foreach my $g (keys %op)
+{
+    foreach my $s (keys %{$op{$g}})
+    {
+	print "[$g] [$s]\n";
+    	foreach my $v (keys %{$op{$g}->{$s}})
+	{
+	    print "     $v=[$op{$g}->{$s}->{$v}]\n";
+	}
+    }
+}
+
+exit;
+
+
+exit;
+use Mon::Client;
+use Data::Dumper;
+
+my $n = new Mon::Client ( host => "localhost" );
+
+die if (!defined $n);
+$n->connect;
+
+%a = $n->list_deps;
+
+$n->disconnect;
+
+print Dumper \%a, "\n";
+
+exit;
+use Mon::Client;
 my $n = new Mon::Client ( host => "localhost" );
 die if (!defined $n);
 $n->connect;
@@ -40,7 +141,7 @@ foreach $g (keys %o) {
 
 __END__
 #
-# $Id: test.pl,v 1.9 1999/06/16 00:46:25 trockij Exp $
+# $Id: test.pl,v 1.11 1999/11/01 02:42:43 trockij Exp $
 #
 
 use Mon::Client;

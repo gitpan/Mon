@@ -122,6 +122,16 @@ Enables a service as specified by B<watch> and B<service>.
 
 Enables B<host>.
 
+=item set ( group, service, var, val )
+
+Sets B<var> in B<group,service> to B<val>. Returns
+undef on error.
+
+=item get ( group, service, var )
+
+Gets variable B<var> in B<group,service> and returns it,
+or undef on error.
+
 =item quit
 
 Logs out of the server. This method should be followed
@@ -133,8 +143,22 @@ Returns a hash of service descriptions, indexed by watch
 and service. For example:
 
     %desc = $mon->list_descriptions;
-    print "$desc{'watchname'}{'servicename'}\n";
+    print "$desc{'watchname'}->{'servicename'}\n";
 
+=item list_deps
+
+Lists dependency expressions and their components for all
+services. If there is no dependency for a particular service,
+then the value will be "NONE".
+
+    %deps = $mon->list_deps;
+    foreach $watch (keys %deps) {
+    	foreach $service (keys %{$deps{$watch}}) {
+	    my $sref = \%{$deps{$watch}->{$service}};
+	    print "expr ($watch,$service) = $sref->{expression}\n";
+	    print "components ($watch,$service) = @{$sref->{components}}\n";
+	}
+    }
 
 =item list_group ( hostgroup )
 
@@ -327,7 +351,7 @@ Returns I<undef> on error.
 #
 # Perl module for interacting with a mon server
 #
-# $Id: Client.pm,v 1.20 1999/06/16 00:46:26 trockij Exp $
+# $Id: Client.pm,v 1.23 1999/11/08 11:06:05 trockij Exp $
 #
 # Copyright (C) 1998 Jim Trocki
 #
@@ -357,7 +381,7 @@ use Text::ParseWords;
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(%OPSTAT $VERSION);
 
-$VERSION = do { my @r = (q$Revision: 1.20 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
+$VERSION = do { my @r = (q$Revision: 1.23 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
 
 my ($STAT_FAIL, $STAT_OK, $STAT_COLDSTART, $STAT_WARMSTART, $STAT_LINKDOWN,
 $STAT_UNKNOWN, $STAT_TIMEOUT, $STAT_UNTESTED, $STAT_DEPEND, $STAT_WARN) = (0..9);
@@ -382,6 +406,8 @@ sub _sock_readline;
 sub _do_cmd;
 sub _list_opstatus;
 sub _start_stop;
+sub _un_esc_str;
+sub _esc_str;
 
 sub new {
     my $proto = shift;
@@ -389,33 +415,33 @@ sub new {
     my $self  = {};
     my %vars = @_;
 
-    if ($ENV{MONHOST}) {
-	$self->{HOST} = $ENV{MONHOST};
+    if ($ENV{"MONHOST"}) {
+	$self->{"HOST"} = $ENV{"MONHOST"};
     } else {
-	$self->{HOST} = undef;
+	$self->{"HOST"} = undef;
     }
 
-    $self->{CONNECTED} = undef;
-    $self->{HANDLE} = new IO::File;
+    $self->{"CONNECTED"} = undef;
+    $self->{"HANDLE"} = new IO::File;
 
-    $self->{PORT} = getservbyname ("mon", "tcp") || 2583;
-    $self->{PROT} = "0.38.0";
-    $self->{TRAP_PRO_VERSION} = "0.3807";
-    $self->{PASSWORD} = undef;
-    $self->{USERNAME} = undef;
-    $self->{DESCRIPTIONS} = undef;
-    $self->{GROUPS} = undef;
-    $self->{ERROR} = undef;
-    $self->{VERSION} = undef;
+    $self->{"PORT"} = getservbyname ("mon", "tcp") || 2583;
+    $self->{"PROT"} = "0.38.0";
+    $self->{"TRAP_PRO_VERSION"} = "0.3807";
+    $self->{"PASSWORD"} = undef;
+    $self->{"USERNAME"} = undef;
+    $self->{"DESCRIPTIONS"} = undef;
+    $self->{"GROUPS"} = undef;
+    $self->{"ERROR"} = undef;
+    $self->{"VERSION"} = undef;
 
-    if ($ENV{USER}) {
-    	$self->{USERNAME} = $ENV{USER};
+    if ($ENV{"USER"}) {
+    	$self->{"USERNAME"} = $ENV{"USER"};
     } else {
-    	$self->{USERNAME} = (getpwuid ($<))[0];
+    	$self->{"USERNAME"} = (getpwuid ($<))[0];
     }
 
-    $self->{OPSTATUS} = undef;
-    $self->{DISABLED} = undef;
+    $self->{"OPSTATUS"} = undef;
+    $self->{"DISABLED"} = undef;
 
     foreach my $k (keys %vars) {
 	if ($k eq "host" && $vars{$k} ne "") {
@@ -435,26 +461,26 @@ sub new {
 
 sub password {
     my $self = shift;
-    if (@_) { $self->{PASSWORD} = shift }
-    return $self->{PASSWORD};
+    if (@_) { $self->{"PASSWORD"} = shift }
+    return $self->{"PASSWORD"};
 }
 
 sub host {
     my $self = shift;
-    if (@_) { $self->{HOST} = shift }
-    return $self->{HOST};
+    if (@_) { $self->{"HOST"} = shift }
+    return $self->{"HOST"};
 }
 
 sub port {
     my $self = shift;
-    if (@_) { $self->{PORT} = shift }
-    return $self->{PORT};
+    if (@_) { $self->{"PORT"} = shift }
+    return $self->{"PORT"};
 }
 
 sub username {
     my $self = shift;
-    if (@_) { $self->{USERNAME} = shift }
-    return $self->{USERNAME};
+    if (@_) { $self->{"USERNAME"} = shift }
+    return $self->{"USERNAME"};
 }
 
 
@@ -501,19 +527,19 @@ sub prot_cmp {
 sub DESTROY {
     my $self = shift;
 
-    if ($self->{CONNECTED}) { $self->disconnect; }
+    if ($self->{"CONNECTED"}) { $self->disconnect; }
 }
 
 sub error {
     my $self = shift;
 
-    return $self->{ERROR};
+    return $self->{"ERROR"};
 }
 
 sub connected {
     my $self = shift;
 
-    return $self->{CONNECTED};
+    return $self->{"CONNECTED"};
 }
 
 
@@ -521,53 +547,53 @@ sub connect {
     my $self = shift;
     my ($iaddr, $paddr, $proto);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if ($self->{HOST} eq "") {
-    	$self->{ERROR} = "no host defined";
+    if ($self->{"HOST"} eq "") {
+    	$self->{"ERROR"} = "no host defined";
 	return undef;
     }
 
-    if (!defined ($iaddr = inet_aton ($self->{HOST}))) {
-	$self->{ERROR} = "could not resolve host";
+    if (!defined ($iaddr = inet_aton ($self->{"HOST"}))) {
+	$self->{"ERROR"} = "could not resolve host";
     	return undef;
     }
 
-    if (!defined ($paddr = sockaddr_in ($self->{PORT}, $iaddr))) {
-	$self->{ERROR} = "could not generate sockaddr";
+    if (!defined ($paddr = sockaddr_in ($self->{"PORT"}, $iaddr))) {
+	$self->{"ERROR"} = "could not generate sockaddr";
     	return undef;
     }
 
     if (!defined ($proto = getprotobyname ('tcp'))) {
-	$self->{ERROR} = "could not getprotobyname for tcp";
+	$self->{"ERROR"} = "could not getprotobyname for tcp";
     	return undef;
     }
 
-    if (!defined socket ($self->{HANDLE}, PF_INET, SOCK_STREAM, $proto)) {
-	$self->{ERROR} = "socket failed, $!";
+    if (!defined socket ($self->{"HANDLE"}, PF_INET, SOCK_STREAM, $proto)) {
+	$self->{"ERROR"} = "socket failed, $!";
     	return undef;
     }
 
-    if (!defined connect ($self->{HANDLE}, $paddr)) {
-	$self->{ERROR} = "connect failed, $!";
+    if (!defined connect ($self->{"HANDLE"}, $paddr)) {
+	$self->{"ERROR"} = "connect failed, $!";
     	return undef;
     }
 
-    $self->{CONNECTED} = 1;
+    $self->{"CONNECTED"} = 1;
 }
 
 
 sub disconnect {
     my $self = shift;
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!defined close ($self->{HANDLE})) {
-	$self->{ERROR} = "could not close: $!";
+    if (!defined close ($self->{"HANDLE"})) {
+	$self->{"ERROR"} = "could not close: $!";
     	return undef;
     }
 
-    $self->{CONNECTED} = 0;
+    $self->{"CONNECTED"} = 0;
 
     return 1;
 }
@@ -576,35 +602,35 @@ sub disconnect {
 sub login {
     my $self = shift;
     my %l = @_;
-    my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
     $self->{"USERNAME"} = $l{"username"} if (defined $l{"username"});
     $self->{"PASSWORD"} = $l{"password"} if (defined $l{"password"});
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    if (!defined $self->{USERNAME} || $self->{USERNAME} eq "") {
-    	$self->{ERROR} = "no username";
+    if (!defined $self->{"USERNAME"} || $self->{"USERNAME"} eq "") {
+    	$self->{"ERROR"} = "no username";
 	return undef;
     }
 
-    if (!defined $self->{PASSWORD} || $self->{PASSWORD} eq "") {
-    	$self->{ERROR} = "no password";
+    if (!defined $self->{"PASSWORD"} || $self->{"PASSWORD"} eq "") {
+    	$self->{"ERROR"} = "no password";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "login $self->{USERNAME} $self->{PASSWORD}");
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"},
+    		"login $self->{USERNAME} $self->{PASSWORD}");
 
     if (!defined $r) {
-	$self->{ERROR} = "error ($l)";
+	$self->{"ERROR"} = "error ($l)";
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -615,27 +641,26 @@ sub login {
 sub disable_watch {
     my $self = shift;
     my ($watch) = @_;
-    my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
     if ($watch !~ /\S+/) {
-    	$self->{ERROR} = "invalid watch";
+    	$self->{"ERROR"} = "invalid watch";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "disable watch $watch");
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "disable watch $watch");
 
     if (!defined $r) {
-	$self->{ERROR} = "error ($l)";
+	$self->{"ERROR"} = "error ($l)";
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -646,32 +671,32 @@ sub disable_watch {
 sub disable_service {
     my $self = shift;
     my ($watch, $service) = @_;
-    my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
     if ($watch !~ /\S+/) {
-    	$self->{ERROR} = "invalid watch";
+    	$self->{"ERROR"} = "invalid watch";
 	return undef;
     }
 
     if ($service !~ /\S+/) {
-    	$self->{ERROR} = "invalid service";
+    	$self->{"ERROR"} = "invalid service";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "disable service $watch $service");
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"},
+    		"disable service $watch $service");
 
     if (!defined $r) {
-	$self->{ERROR} = "error ($l)";
+	$self->{"ERROR"} = "error ($l)";
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -682,22 +707,21 @@ sub disable_service {
 sub disable_host {
     my $self = shift;
     my (@hosts) = @_;
-    my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "disable host @hosts");
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "disable host @hosts");
 
     if (!defined $r) {
-	$self->{ERROR} = "error ($l)";
+	$self->{"ERROR"} = "error ($l)";
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -708,27 +732,26 @@ sub disable_host {
 sub enable_watch {
     my $self = shift;
     my ($watch) = @_;
-    my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
     if ($watch !~ /\S+/) {
-    	$self->{ERROR} = "invalid watch";
+    	$self->{"ERROR"} = "invalid watch";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "enable watch $watch");
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "enable watch $watch");
 
     if (!defined $r) {
-	$self->{ERROR} = "error ($l)";
+	$self->{"ERROR"} = "error ($l)";
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -739,32 +762,32 @@ sub enable_watch {
 sub enable_service {
     my $self = shift;
     my ($watch, $service) = @_;
-    my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
     if ($watch !~ /\S+/) {
-    	$self->{ERROR} = "invalid watch";
+    	$self->{"ERROR"} = "invalid watch";
 	return undef;
     }
 
     if ($service !~ /\S+/) {
-    	$self->{ERROR} = "invalid service";
+    	$self->{"ERROR"} = "invalid service";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "enable service $watch $service");
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"},
+    		"enable service $watch $service");
 
     if (!defined $r) {
-	$self->{ERROR} = "error ($l)";
+	$self->{"ERROR"} = "error ($l)";
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -775,68 +798,66 @@ sub enable_service {
 sub enable_host {
     my $self = shift;
     my (@hosts) = @_;
-    my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "enable host @hosts");
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "enable host @hosts");
 
     if (!defined $r) {
-	$self->{ERROR} = "error ($l)";
+	$self->{"ERROR"} = "error ($l)";
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
     return $r;
 }
 
+
 sub version {
     my $self = shift;
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    unless (defined($self->{VERSION})) {
-	my ($r, $l);
-	($r, $l) = _do_cmd ($self->{HANDLE}, "version");
+    unless (defined($self->{"VERSION"})) {
+	my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "version");
 
 	if (!defined $r) {
-	    $self->{ERROR} = "error ($l)";
+	    $self->{"ERROR"} = "error ($l)";
 	    return undef;
 	} elsif ($r !~ /^220/) {
-	    $self->{ERROR} = $r;
+	    $self->{"ERROR"} = $r;
 	    return undef;
 	}
-	($self->{VERSION} = $l) =~ s/^version\s+//;;
+	($self->{"VERSION"} = $l) =~ s/^version\s+//;;
     }
 
-    return $self->{VERSION};
+    return $self->{"VERSION"};
 }
 
 
 sub quit {
     my $self = shift;
-    my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "quit");
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "quit");
 
     return $r;
 }
@@ -844,30 +865,30 @@ sub quit {
 
 sub list_descriptions {
     my $self = shift;
-    my ($r, @d, $d, $group, $service, $desc, %desc);
+    my ($d, $group, $service, $desc, %desc);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
     my $v = $self->prot_cmp ($self->prot, "0.38.0");
     if (!defined $v) {
 	return undef;
     } elsif ($v < 0) {
-    	$self->{ERROR} = "list descriptions not supported";
+    	$self->{"ERROR"} = "list descriptions not supported";
 	return undef;
     }
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, @d) = _do_cmd ($self->{HANDLE}, "list descriptions");
+    my ($r, @d) = _do_cmd ($self->{"HANDLE"}, "list descriptions");
 
     if (!defined $r) {
-	$self->{ERROR} = "error (@d)";
+	$self->{"ERROR"} = "error (@d)";
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -875,10 +896,61 @@ sub list_descriptions {
 
     foreach $d (@d) {
 	($group, $service, $desc) = split (/\s+/, $d, 3);
-	$desc{$group}{$service} = $desc;
+	$desc{$group}{$service} =
+	    _un_esc_str ((parse_line ('\s+', 0, $desc))[0]);
     }
 
     return %desc;
+}
+
+
+sub list_deps {
+    my $self = shift;
+
+    undef $self->{"ERROR"};
+
+    my $v = $self->prot_cmp ($self->prot, "0.38.0");
+
+    if (!defined $v) {
+	return undef;
+    } elsif ($v < 0) {
+    	$self->{"ERROR"} = "list deps not supported";
+	return undef;
+    }
+
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
+	return undef;
+    }
+
+    my ($r, @d) = _do_cmd ($self->{"HANDLE"}, "list deps");
+
+    if (!defined $r) {
+	$self->{"ERROR"} = "error (@d)";
+    	return undef;
+    } elsif ($r !~ /^220/) {
+	$self->{"ERROR"} = $r;
+    	return undef;
+    }
+
+    return $r if (!defined $r);
+
+    my %dep = ();
+
+    foreach my $d (@d) {
+	my ($what, $group, $service, $l) = split (/\s+/, $d, 4);
+
+	if ($what eq "exp") {
+	    $dep{$group}->{$service}->{"expression"} =
+	    	_un_esc_str ((parse_line ('\s+', 0, $l))[0]);
+
+	} elsif ($what eq "cmp") {
+	    @{$dep{$group}->{$service}->{"components"}} =
+	    	split (/\s+/, $l);
+	}
+    }
+
+    return %dep;
 }
 
 
@@ -886,27 +958,25 @@ sub list_group {
     my $self = shift;
     my ($group) = @_;
 
-    my ($r, $l);
+    undef $self->{"ERROR"};
 
-    undef $self->{ERROR};
-
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
     if ($group eq "") {
-    	$self->{ERROR} = "invalid group";
+    	$self->{"ERROR"} = "invalid group";
     	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "list group $group");
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "list group $group");
 
     if ($r =~ /^220/) {
     	$l =~ s/^hostgroup\s+$group\s+//;;
 		return split (/\s+/, $l);
     } else {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     }
 
@@ -936,22 +1006,22 @@ sub list_successes {
 
 sub list_disabled {
     my $self = shift;
-    my ($r, @d, %disabled, $h);
+    my (%disabled, $h);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, @d) = _do_cmd ($self->{HANDLE}, "list disabled");
+    my ($r, @d) = _do_cmd ($self->{"HANDLE"}, "list disabled");
 
     if (!defined $r) {
-	$self->{ERROR} = $d[0];
+	$self->{"ERROR"} = $d[0];
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -978,26 +1048,27 @@ sub list_disabled {
 
 sub list_alerthist {
     my $self = shift;
-    my ($r, @h, @alerts, $h, $group, $service, $time, $alert, $args, $summary);
+    my (@alerts, $h, $group, $service, $time, $alert, $args, $summary);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, @h) = _do_cmd ($self->{HANDLE}, "list alerthist");
+    my ($r, @h) = _do_cmd ($self->{"HANDLE"}, "list alerthist");
 
     if (!defined $r) {
-	$self->{ERROR} = "error (@h)";
+	$self->{"ERROR"} = "error (@h)";
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
     foreach $h (@h) {
+	$h = _un_esc_str ($h);
     	my ($type, $group, $service, $time, $alert, $args, $summary) =
 	    ($h =~ /^(\S+) \s+ (\S+) \s+ (\S+) \s+
 		    (\d+) \s+ (\S+) \s+ \(([^)]*)\) \s+ (.*)$/x);
@@ -1019,20 +1090,20 @@ sub list_failurehist {
     my $self = shift;
     my ($r, @f, $f, $group, $service, $time, $summary, @failures);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, @f) = _do_cmd ($self->{HANDLE}, "list failurehist");
+    ($r, @f) = _do_cmd ($self->{"HANDLE"}, "list failurehist");
 
     if (!defined $r) {
-	$self->{ERROR} = "@f";
+	$self->{"ERROR"} = "@f";
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1054,20 +1125,20 @@ sub list_pids {
     my $self = shift;
     my ($r, $l, @pids, @p, $p, $pid, $group, $service, $server);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, @p) = _do_cmd ($self->{HANDLE}, "list pids");
+    ($r, @p) = _do_cmd ($self->{"HANDLE"}, "list pids");
 
     if (!defined $r) {
-	$self->{ERROR} = "@p";
+	$self->{"ERROR"} = "@p";
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1089,20 +1160,20 @@ sub list_state {
     my $self = shift;
     my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "list state");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "list state");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1133,24 +1204,24 @@ sub reset {
     my @opts = @_;
     my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
     if (@opts == 0) {
-	($r, $l) = _do_cmd ($self->{HANDLE}, "reset");
+	($r, $l) = _do_cmd ($self->{"HANDLE"}, "reset");
     } else {
-	($r, $l) = _do_cmd ($self->{HANDLE}, "reset @opts");
+	($r, $l) = _do_cmd ($self->{"HANDLE"}, "reset @opts");
     }
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1162,20 +1233,20 @@ sub reload {
     my $self = shift;
     my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "reload");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "reload");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1187,20 +1258,20 @@ sub term {
     my $self = shift;
     my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "term");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "term");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1211,51 +1282,50 @@ sub term {
 sub set_maxkeep {
     my $self = shift;
     my $val = shift;
-    my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
     if ($val !~ /^\d+$/) {
-    	$self->{ERROR} = "invalid value for maxkeep";
+    	$self->{"ERROR"} = "invalid value for maxkeep";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "set maxkeep $val");
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "set maxkeep $val");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
     return $r;
 }
 
+
 sub get_maxkeep {
     my $self = shift;
-    my ($r, $l, $val);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "set maxkeep");
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "set maxkeep");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1265,36 +1335,93 @@ sub get_maxkeep {
 }
 
 
+sub set {
+    my $self = shift;
+    my ($group, $service, $var, $val) = @_;
+
+    undef $self->{"ERROR"};
+
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
+	return undef;
+    }
+
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "set $group $service $var " .
+    	"'" . _esc_str ($val, 1) . "'");
+
+    if (!defined $r)
+    {
+    	$self->{"ERROR"} = $l;
+	return undef;
+    }
+    elsif ($r !~ /^220/)
+    {
+    	$self->{"ERROR"} = $r;
+	return undef;
+    }
+
+    return $r;
+}
+
+
+sub get {
+    my $self = shift;
+    my ($group, $service, $var) = @_;
+
+    undef $self->{"ERROR"};
+
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
+	return undef;
+    }
+
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "get $group $service $var");
+
+    if (!defined $r) {
+	$self->{"ERROR"} = $l;
+    	return undef;
+    } elsif ($r !~ /^220/) {
+	$self->{"ERROR"} = $r;
+    	return undef;
+    }
+
+    ($group, $service, $var) = split (/\s+/, $l, 3);
+    $var =~ s/^[^=]*=//;
+
+    return _un_esc_str ((parse_line ('\s+', 0, $var))[0]);
+}
+
+
 sub test {
     my $self = shift;
     my ($group, $service) = @_;
     my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
     if (!defined $group) {
-    	$self->{ERROR} = "group not specified";
+    	$self->{"ERROR"} = "group not specified";
 	return undef;
     }
 
     if (!defined $service) {
-    	$self->{ERROR} = "service not specified";
+    	$self->{"ERROR"} = "service not specified";
 	return undef;
     }
 
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "test $group $service");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "test $group $service");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1305,22 +1432,23 @@ sub test {
 sub ack {
     my $self = shift;
     my ($group, $service, $text) = @_;
-    my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "ack $group $service $text");
+    $text = _esc_str ($text, 1);
+
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "ack $group $service '$text'");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1333,20 +1461,20 @@ sub loadstate {
     my (@state) = @_;
     my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "loadstate @state");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "loadstate @state");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1359,20 +1487,20 @@ sub savestate {
     my (@state) = @_;
     my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "savestate @state");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "savestate @state");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1384,20 +1512,20 @@ sub servertime {
     my $self = shift;
     my ($r, $l, $t);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "servertime");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "servertime");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1413,20 +1541,20 @@ sub clear {
     my $self = shift;
     my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "clear timers");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "clear timers");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1460,45 +1588,62 @@ sub send_trap {
     my $self = shift;
     my %v = @_;
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if ($v{"retval"} !~ /^\d+$/) {
-	$self->{ERROR} = "invalid value for retval";
+    if ($v{"retval"} !~ /^\d+$/)
+    {
+	$self->{"ERROR"} = "invalid value for retval";
 	return undef;
     }
 
-    if ($v{"opstatus"} =~ /^[a-z_]+$/) {
-    	if (!defined ($v{"opstatus"} = $OPSTAT{$v{"opstatus"}})) {
-	    $self->{ERROR} = "Undefined opstatus type";
-	    return undef;
-	}
+    if (!defined ($v{"opstatus"} = $OPSTAT{$v{"opstatus"}}))
+    {
+	$self->{"ERROR"} = "Undefined opstatus type";
+	return undef;
+    }
+
+    foreach my $k (keys %v)
+    {
+    	$v{$k} = _esc_str ($v{$k}, 1);
     }
 
     my $pkt = "";
-    $pkt .= "pro=".$self->{TRAP_PRO_VERSION}."\n";
-    $pkt .= "usr=" . $self->{USERNAME} . "\n" .
-	   "pas=" . $self->{PASSWORD} . "\n" if ($self->{USERNAME} ne "");
+    $pkt .= "pro='" . _esc_str ($self->{"TRAP_PRO_VERSION"}, 1) . "'\n";
+    $pkt .= "usr='" . _esc_str ($self->{"USERNAME"}, 1) . "'\n";
+    $pkt .= "pas='" . _esc_str ($self->{"PASSWORD"}, 1) . "'\n"
+	    if ($self->{"USERNAME"} ne "");
 
-    $pkt .= "spc=$v{opstatus}\n" .
-	"seq=0\n" .
-	"typ=trap\n" .
-	"grp=$v{group}\n" .
-	"svc=$v{service}\n" .
-	"sta=$v{retval}\n" .
-	"spc=$v{opstatus}\n" .
-	"tsp=".time."\n" .
-	"sum=$v{summary}\n" .
-	"dtl=$v{detail}\n.\n";
+    $pkt .= "spc='$v{opstatus}'\n" .
+	"seq='0'\n" .
+	"typ='trap'\n" .
+	"grp='$v{group}'\n" .
+	"svc='$v{service}'\n" .
+	"sta='$v{retval}'\n" .
+	"spc='$v{opstatus}'\n" .
+	"tsp='" . time . "'\n" .
+	"sum='$v{summary}'\n" .
+	"dtl='$v{detail}'\n";
 
-    my $proto = getprotobyname ("udp") || die "could not get proto\n";
-    socket (TRAP, AF_INET, SOCK_DGRAM, $proto) ||
-	die "could not create UDP socket: $!\n";
+    my $proto = getprotobyname ("udp");
+    if ($proto eq "")
+    {
+    	$self->{"ERROR"} = "could not get proto";
+	return undef;
+    }
 
-    my $port = $self->{PORT};
+    if (!socket (TRAP, AF_INET, SOCK_DGRAM, $proto))
+    {
+	$self->{"ERROR"} = "could not create UDP socket: $!";
+	return undef;
+    }
 
-    my $paddr = sockaddr_in ($port, inet_aton ($self->{HOST}));
-    if (!defined (send (TRAP, $pkt, 0, $paddr))) {
-       $self->{ERROR} = "could not send trap to ".$self->{HOST}.": $!\n";
+    my $port = $self->{"PORT"};
+
+    my $paddr = sockaddr_in ($port, inet_aton ($self->{"HOST"}));
+
+    if (!defined (send (TRAP, $pkt, 0, $paddr)))
+    {
+       $self->{"ERROR"} = "could not send trap to ".$self->{"HOST"}.": $!\n";
        return undef;
     }
 
@@ -1513,25 +1658,25 @@ sub _start_stop {
     my $cmd = shift;
     my ($r, $l);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
     if ($cmd ne "start" && $cmd ne "stop") {
-    	$self->{ERROR} = "undefined command";
+    	$self->{"ERROR"} = "undefined command";
 	return undef;
     }
 
-    ($r, $l) = _do_cmd ($self->{HANDLE}, "$cmd");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "$cmd");
 
     if (!defined $r) {
-	$self->{ERROR} = $l;
+	$self->{"ERROR"} = $l;
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1543,22 +1688,21 @@ sub _list_opstatus {
     my ($self, $cmd) = @_;
     my (%op, $o, %opstatus);
     my ($group, $service, $last, $timer, $summary);
-    my ($w, $var, $val);
 
-    undef $self->{ERROR};
+    undef $self->{"ERROR"};
 
-    if (!$self->{CONNECTED}) {
-    	$self->{ERROR} = "not connected";
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
 	return undef;
     }
 
-    my ($r, @op) = _do_cmd ($self->{HANDLE}, "$cmd");
+    my ($r, @op) = _do_cmd ($self->{"HANDLE"}, "$cmd");
 
     if (!defined $r) {
-	$self->{ERROR} = $op[0];
+	$self->{"ERROR"} = $op[0];
     	return undef;
     } elsif ($r !~ /^220/) {
-	$self->{ERROR} = $r;
+	$self->{"ERROR"} = $r;
     	return undef;
     }
 
@@ -1567,16 +1711,16 @@ sub _list_opstatus {
 
     if ($v >= 0) {		# 0.38.0 and above
     	foreach $o (@op) {
-	    foreach $w (quotewords ('\s+', 0, $o)) {
-	    	($var, $val) = split (/=/, $w);
-		$op{$var} = $val;
+	    foreach my $w (quotewords ('\s+', 0, $o)) {
+	    	my ($var, $val) = split (/=/, $w, 2);
+		$op{$var} = _un_esc_str ($val);
 	    }
 
 	    next if ($op{group} eq "");
 	    next if ($op{service} eq "");
 	    $group = $op{"group"};
 	    $service = $op{"service"};
-	    foreach $w (keys %op) {
+	    foreach my $w (keys %op) {
 	    	$opstatus{$group}{$service}{$w} = $op{$w};
 	    }
 	}
@@ -1689,7 +1833,41 @@ sub _sock_readline {
 #
 # not yet implemented
 #
-#set group service var value
-#get group service var
 #list aliases
 #list aliasgroups
+
+
+sub _esc_str {
+    my $str = shift;
+    my $inquotes = shift;
+    my $escstr = "";
+
+    for (my $i = 0; $i < length ($str); $i++)
+    {
+    	my $c = substr ($str, $i, 1);
+
+	if (ord ($c) < 32 ||
+	    ord ($c) > 126 ||
+	    $c eq "\"" ||
+	    $c eq "\'")
+	{
+	    $c = sprintf ("\\%02x", ord($c));
+	}
+	elsif ($inquotes && $c eq "\\")
+	{
+	    $c = "\\\\";
+	}
+
+	$escstr .= $c;
+    }
+
+    $escstr;
+}
+
+sub _un_esc_str {
+    my $str = shift;
+
+    $str =~ s{\\([0-9a-f]{2})}{chr(hex($1))}eg;
+
+    $str;
+}
