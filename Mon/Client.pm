@@ -65,6 +65,13 @@ Compares two protocol versions and returns -1, 0, or 1 if prot_a is
 less than, equal, or greater than prot_b, respectively. The protocols
 must be specified in the form described by above entry for "prot".
 
+=item protid ([protocol])
+
+Returns true if client and server protocol match, false otherwise.
+Implicitly called by B<connect>. If protocol is specified as an integer,
+supplies that protocol version to the server for verification.
+
+
 =item version
 
 Returns the protocol version of the remote server.
@@ -78,10 +85,11 @@ there was no error.
 
 Returns 0 (not connected) or 1 (connected).
 
-=item connect
+=item connect (%args)
 
-Connects to the server. If B<host> and B<port> have not
-been set, uses the defaults. Returns I<undef> on error.
+Connects to the server. If B<host> and B<port> have not been set,
+uses the defaults. Returns I<undef> on error.  If $args{"skip_protid"}
+is true, skip protocol identification upon connect.
 
 =item disconnect
 
@@ -165,10 +173,19 @@ then the value will be "NONE".
 Lists members of B<hostgroup>. Returns an array of each
 member.
 
-=item list_opstatus
+=item list_watch
 
-Returns a hash of per-service operational statuses, as indexed by
-watch and service.
+Returns an array of all the defined watch groups and services.
+
+    foreach $w ($mon->list_watch) {
+    	print "group=$w->[0] service=$w->[1]\n";
+    }
+
+=item list_opstatus ( [group1, service1], ... )
+
+Returns a hash of per-service operational statuses, as indexed by watch
+and service. The list of anonymous arrays is optional, and if is not
+provided then the status of all groups and services will be queried.
 
     %s = $mon->list_opstatus;
     foreach $watch (keys %s) {
@@ -243,7 +260,7 @@ Returns an array of hash references containing the downtime log.
            $_->{"service"},
            $_->{"failtime"},
            $_->{"downtime"},
-           $_->{"intercal"},
+           $_->{"interval"},
            $_->{"summary"},
            "\n",
        );
@@ -323,10 +340,14 @@ Sets the maximum number of history entries to store in memory.
 
 Returns the maximum number of history entries to store in memory.
 
-=item test ( test, group, service )
+=item test ( test, group, service [, exitval, period])
 
-Schedules a service test to run immediately. B<test> must be
-B<alert>, B<startupalert>, or B<upalert>.
+Schedules a service test to run immediately, or tests an alert for a
+given period. B<test> must be B<monitor>, B<alert>, B<startupalert>, or
+B<upalert>. To test alerts, the B<exitval> and B<period> must be supplied.
+Periods are identified by their label in the mon config file. If there
+are no period tags, then the actual period string must be used, exactly
+as it is listed in the config file.
 
 =item ack ( group, service, text )
 
@@ -373,7 +394,7 @@ Returns I<undef> on error.
 #
 # Perl module for interacting with a mon server
 #
-# $Id: Client.pm,v 1.27 2000/02/07 00:30:36 trockij Exp $
+# $Id: Client.pm,v 1.30 2000/02/22 16:52:40 trockij Exp $
 #
 # Copyright (C) 1998-2000 Jim Trocki
 #
@@ -403,7 +424,7 @@ use Text::ParseWords;
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(%OPSTAT $VERSION);
 
-$VERSION = do { my @r = (q$Revision: 1.27 $ =~ /\d+/g); sprintf "%d."."%02d" x $#r, @r }; # must be all one line, for MakeMaker
+$VERSION = do { my @r = (q$Name: monperl-0-8 $ =~ /\d+/g); sprintf "%d.%d" x $#r, @r }; # must be all one line, for MakeMaker
 
 my ($STAT_FAIL, $STAT_OK, $STAT_COLDSTART, $STAT_WARMSTART, $STAT_LINKDOWN,
 $STAT_UNKNOWN, $STAT_TIMEOUT, $STAT_UNTESTED, $STAT_DEPEND, $STAT_WARN) = (0..9);
@@ -447,7 +468,7 @@ sub new {
     $self->{"HANDLE"} = new IO::File;
 
     $self->{"PORT"} = getservbyname ("mon", "tcp") || 2583;
-    $self->{"PROT"} = "0.38.0";
+    $self->{"PROT"} = 0x2611;
     $self->{"TRAP_PRO_VERSION"} = "0.3807";
     $self->{"PASSWORD"} = undef;
     $self->{"USERNAME"} = undef;
@@ -567,6 +588,8 @@ sub connected {
 
 sub connect {
     my $self = shift;
+    my %args = @_;
+
     my ($iaddr, $paddr, $proto);
 
     undef $self->{"ERROR"};
@@ -602,8 +625,45 @@ sub connect {
     }
 
     $self->{"CONNECTED"} = 1;
+
+    if (!$args{"skip_protid"})
+    {
+    	if (!$self->protid)
+	{
+	    $self->{"ERROR"} = "connect failed, protocol mismatch";
+	    return undef;
+	}
+    }
 }
 
+
+sub protid {
+    my $self = shift;
+    my $p = shift;
+
+    undef $self->{"ERROR"};
+
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
+	return undef;
+    }
+
+    if (!defined $p) {
+    	$p = int ($self->{"PROT"});
+    }
+
+    my ($r, $l) = _do_cmd ($self->{"HANDLE"}, "protid $p");
+
+    if (!defined $r) {
+	$self->{"ERROR"} = "error ($l)";
+    	return undef;
+    } elsif ($r !~ /^220/) {
+	$self->{"ERROR"} = $r;
+    	return undef;
+    }
+
+    1;
+}
 
 sub disconnect {
     my $self = shift;
@@ -1005,10 +1065,55 @@ sub list_group {
 }
 
 
-sub list_opstatus {
+sub list_watch {
     my $self = shift;
 
-    _list_opstatus($self, "list opstatus");
+    undef $self->{"ERROR"};
+
+    if (!$self->{"CONNECTED"}) {
+    	$self->{"ERROR"} = "not connected";
+	return undef;
+    }
+
+    my ($r, @l) = _do_cmd ($self->{"HANDLE"}, "list watch");
+
+    my @groups;
+
+    if ($r =~ /^220/)
+    {
+    	foreach my $l (@l)
+	{
+	    push @groups, [split (/\s+/, $l, 2)];
+	}
+	@groups;
+    }
+    
+    else
+    {
+	$self->{"ERROR"} = $l;
+    	return undef;
+    }
+}
+
+
+sub list_opstatus {
+    my $self = shift;
+    my @g = @_;
+
+    if (@g == 0)
+    {
+	_list_opstatus ($self, "list opstatus");
+    }
+
+    else
+    {
+	my @l;
+	foreach my $i (@g)
+	{
+	    push @l, "$i->[0],$i->[1]";
+	}
+    	_list_opstatus ($self, "list opstatus " . join (" ", @l));
+    }
 }
 
 
@@ -1457,7 +1562,7 @@ sub get {
 
 sub test {
     my $self = shift;
-    my ($what, $group, $service) = @_;
+    my ($what, $group, $service, $exitval, $period) = @_;
     my ($r, $l);
 
     undef $self->{"ERROR"};
@@ -1467,7 +1572,7 @@ sub test {
 	return undef;
     }
 
-    if ($what !~ /^alert|startupalert|upalert$/) {
+    if ($what !~ /^monitor|alert|startupalert|upalert$/) {
     	$self->{"ERROR"} = "unknown test";
 	return undef;
     }
@@ -1482,8 +1587,14 @@ sub test {
 	return undef;
     }
 
+    if ($what =~ /^alert|startupalert|upalert$/ &&
+	    ($exitval eq "" || $period eq "")) {
+    	$self->{"ERROR"} = "must specify exit value and time period";
+	return undef;
+    }
 
-    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "test $what $group $service");
+    ($r, $l) = _do_cmd ($self->{"HANDLE"},
+	    join (" ", "test", $what, $group, $service, $exitval, $period));
 
     if (!defined $r) {
 	$self->{"ERROR"} = $l;

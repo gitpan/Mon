@@ -2,6 +2,73 @@ exit;
 use Mon::Client;
 
 my $c = new Mon::Client (
+    host => "localhost",
+);
+
+die if (!defined $c);
+
+$c->{"PROT"} = 9746;
+
+$c->connect ("skip_protid" => 1);
+
+if ($c->error ne "") {
+    die "error: " . $c->error . "\n";
+}
+
+if ($c->connected)
+{
+	print "CONNECTED\n";
+}
+else
+{
+	print "NOT CONNECTED\n";
+	print $c->error . "\n";
+}
+
+#my @s = $c->list_watch;
+
+$c->disconnect;
+
+exit;
+use Mon::Client;
+
+my $c = new Mon::Client (
+    host => "localhost",
+);
+
+die if (!defined $c);
+
+$c->connect;
+
+if ($c->connected)
+{
+	print "CONNECTED\n";
+}
+else
+{
+	print "NOT CONNECTED\n";
+	print $c->error . "\n";
+}
+
+my %op = $c->list_opstatus (["bd1", "ping"]);
+
+foreach my $g (keys %op)
+{
+    foreach my $s (keys %{$op{$g}})
+    {
+	print "[$g] [$s]\n";
+    	foreach my $v (keys %{$op{$g}->{$s}})
+	{
+	    print "     $v=[$op{$g}->{$s}->{$v}]\n";
+	}
+    }
+}
+$c->disconnect;
+
+exit;
+use Mon::Client;
+
+my $c = new Mon::Client (
     host => "uplift",
 );
 
@@ -42,7 +109,7 @@ else
     print "timer=$v\n";
 }
 
-my $v = $c->set ("router", "ping", "_fake_timer", "fuck this shit\n50");
+my $v = $c->set ("router", "ping", "_fake_timer", "up it\n50");
 if (!defined ($v))
 {
     print STDERR "err setting\n";
@@ -141,7 +208,7 @@ foreach $g (keys %o) {
 
 __END__
 #
-# $Id: test.pl,v 1.11 1999/11/01 02:42:43 trockij Exp $
+# $Id: test.pl,v 1.14 2000/02/22 16:52:39 trockij Exp $
 #
 
 use Mon::Client;
