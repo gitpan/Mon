@@ -304,7 +304,12 @@ of currently active monitors run by the server.
 
 =item list_state
 
-Lists the state of the scheduler.
+Lists the state of the scheduler. Returns a two-element array. The 
+first element of the array is 0 if the scheduler is stopped, and 1
+if the scheduler is currently running. The second element of the array
+returned is the string "scheduler running" if the scheduler is 
+currently running, and if the scheduler is stopped, the second
+element is the time(2) that the scheduler was stopped.
 
     @s = $mon->list_state;
 
@@ -351,6 +356,27 @@ Periods are identified by their label in the mon config file. If there
 are no period tags, then the actual period string must be used, exactly
 as it is listed in the config file.
 
+=item test_config
+
+Tests the syntax of the configuration file. Returns a two-element 
+array. The first element of the array is 0 if the syntax of the
+config file is invalid, and 1 if the syntax of the config file
+is OK. The second element of the array returned is the failure 
+message, if the config file has invalid syntax, and the result code
+if the config file syntax is OK. This function returns undef if it
+cannot get a connection or a response from the mon server.
+
+Config file checking stops as soon as an error is found, so
+you will need to run this command more than once if you have multiple
+errors in your config file in order to find them all.
+
+    @s = $mon->test_config;
+
+    if ($s[0] == 0) {
+        print "error in config file:\n" . $s[1] . "\n";
+    }
+
+
 =item ack ( group, service, text )
 
 When B<group/service> is in a failure state,
@@ -396,7 +422,7 @@ Returns I<undef> on error.
 #
 # Perl module for interacting with a mon server
 #
-# $Id: Client.pm 1.2 Mon, 21 Aug 2000 08:34:36 -0700 trockij $
+# $Id: Client.pm 1.4 Thu, 11 Jan 2001 08:42:17 -0800 trockij $
 #
 # Copyright (C) 1998-2000 Jim Trocki
 #
@@ -426,7 +452,7 @@ use Text::ParseWords;
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(%OPSTAT $VERSION);
 
-$VERSION = "0.10";
+$VERSION = "0.11";
 
 my ($STAT_FAIL, $STAT_OK, $STAT_COLDSTART, $STAT_WARMSTART, $STAT_LINKDOWN,
 $STAT_UNKNOWN, $STAT_TIMEOUT, $STAT_UNTESTED, $STAT_DEPEND, $STAT_WARN) = (0..9);
@@ -1597,6 +1623,31 @@ sub test {
     }
 
     return $r;
+}
+
+
+sub test_config {
+    my $self = shift;
+    my ($r, $l);
+
+    undef $self->{"ERROR"};
+
+    if (!$self->{"CONNECTED"}) {
+        $self->{"ERROR"} = "not connected";
+        return undef;
+    }
+
+    ($r, $l) = _do_cmd ($self->{"HANDLE"}, "test config");
+
+    if (!defined $r) {
+        $self->{"ERROR"} = $l;
+        return undef;
+    } elsif ($r !~ /^220/) {
+        $self->{"ERROR"} = $r;
+        return (0 , $l) ;
+    }
+
+    return (1 , $r);
 }
 
 

@@ -1,10 +1,10 @@
 #
-# $Id: Makefile.PL 1.2 Mon, 21 Aug 2000 08:34:36 -0700 trockij $
+# $Id: Makefile.PL 1.3 Thu, 11 Jan 2001 08:42:17 -0800 trockij $
 #
 
 use ExtUtils::MakeMaker;
 
 WriteMakefile(
     'NAME'      => 'Mon',
-    'VERSION'   => "0.10",
+    'VERSION'   => "0.11",
 );

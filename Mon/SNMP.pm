@@ -88,7 +88,7 @@ Mon::SNMP depends upon Convert::BER to do the real work.
 
 #
 #
-# $Id: SNMP.pm 1.2 Mon, 21 Aug 2000 08:34:36 -0700 trockij $
+# $Id: SNMP.pm 1.3 Thu, 11 Jan 2001 08:42:17 -0800 trockij $
 #
 # Copyright (C) 1998 Jim Trocki
 #
@@ -119,7 +119,7 @@ use Socket;
 @ISA = qw(Exporter);
 @EXPORT_OK = qw(@traptypes @ASN_DEFS $VERSION);
 
-$VERSION = "0.10";
+$VERSION = "0.11";
 
 @traptypes = ("COLDSTART", "WARMSTART", "LINKDOWN", "LINKUP", "AUTHFAIL",
 	"EGPNEIGHBORLOSS", "ENTERPRISESPECIFIC");

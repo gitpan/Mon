@@ -75,7 +75,7 @@ retrieve a more elaborate error message and to reset the internal error state.
 #
 # Perl module for parsing / dumping a mon protocol block
 #
-# $Id: Protocol.pm 1.2 Mon, 21 Aug 2000 08:34:36 -0700 trockij $
+# $Id: Protocol.pm 1.3 Thu, 11 Jan 2001 08:42:17 -0800 trockij $
 #
 # Copyright (C) 1999 Lars Marowsky-Brée <lmb@teuto.net>
 #
@@ -119,7 +119,7 @@ sub _un_esc_str;
 @ISA = qw(Exporter);
 @EXPORT_OK = qw($VERSION @);
 
-$VERSION = "0.10";
+$VERSION = "0.11";
 
 @TYPES = qw(cmd_monitor cmd_alert cmd_logger res_monitor res_alert res_logger);
 

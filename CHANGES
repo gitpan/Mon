@@ -1,7 +1,14 @@
-$Id: CHANGES 1.1 Mon, 21 Aug 2000 08:30:45 -0700 trockij $
+$Id: CHANGES 1.2 Sun, 29 Oct 2000 12:52:41 -0800 trockij $
 $Name:  $
 
 CHANGELOG
+
+Differences between Mon-0.10 and 0.11:
+Sun Oct 29 12:16:43 PST 2000
+--------------------------------------
+
+ -incorporated Andrew Ryan's "test config" patch
+
 
 Differences between Mon-0.8 and 0.9:
 Mon Feb 28 04:59:39 PST 2000
